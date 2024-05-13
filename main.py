@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from selenium.common.exceptions import WebDriverException
 from fake_useragent import UserAgent
 from seleniumwire import webdriver
-import seleniumwire.thirdparty.mitmproxy.exceptions as mitmproxy_exceptions
+import chromedriver_binary
 
 # Global variables
 price_range = 100  # Price range for filtering products
