@@ -316,13 +316,16 @@ if __name__ == "__main__":
 
         # Load previous progress
         progress = load_progress()
-        start_price, start_page = load_previous_progress(progress, category_name)
+        start_from_price, start_page = load_previous_progress(progress, category_name)
         
     else:
         print(f"Base URL is invalid: {base_category_url}")
         exit()
 
-    for start_price in range(start_price, 1000000000, price_range):
+    start_time = time.time()  # Record the start time
+    total_offers_scraped = 0
+
+    for start_price in range(start_from_price, 1000000000, price_range):
         # Calculate the end price
         end_price = start_price + price_range
 
@@ -342,6 +345,8 @@ if __name__ == "__main__":
             for page_num in range(start_page, page_count + 1):
                 page_filter = f"&p={page_num}"
                 full_url = category_url + page_filter
+
+                page_start_time = time.time()  # Record the start time for the current page
 
                 # Save progress
                 progress = {
@@ -365,7 +370,34 @@ if __name__ == "__main__":
 
                     # Wait for all futures to complete
                     results = wait(all_futures)
+
+                page_end_time = time.time()  # Record the end time for the current page
+                page_elapsed_time = page_end_time - page_start_time  # Calculate the elapsed time for the current page
+
+                # Calculate the offers per minute rate for the current page
+                page_offers_per_minute = len(offer_urls) / (page_elapsed_time / 60)
+                print(f"Total offers scraped: {total_offers_scraped}, Offers per minute: {page_offers_per_minute:.2f}")
+
+            start_page = 1
+
+            end_time = time.time()  # Record the end time
+            elapsed_time = end_time - start_time  # Calculate the elapsed time in seconds
+
+            # Calculate the offers per minute rate
+            offers_per_minute = total_offers_scraped / (elapsed_time / 60)
+            print(f"Total offers scraped: {total_offers_scraped}")
+            print(f"Elapsed time: {elapsed_time:.2f} seconds")
+            print(f"Offers per minute: {offers_per_minute:.2f}")
         else:
             print(f"Invalid URL: {category_url}")
+
+    end_time = time.time()  # Record the end time
+    elapsed_time = end_time - start_time  # Calculate the elapsed time in seconds
+
+    # Calculate the overall offers per minute rate
+    overall_offers_per_minute = total_offers_scraped / (elapsed_time / 60)
+    print(f"Total offers scraped: {total_offers_scraped}")
+    print(f"Elapsed time: {elapsed_time:.2f} seconds")
+    print(f"Overall offers per minute: {overall_offers_per_minute:.2f}")     
 
     exit()
