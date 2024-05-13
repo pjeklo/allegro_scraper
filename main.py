@@ -232,13 +232,10 @@ def scrape_offer(offer_url, category_name, driver, proxy_list):
             print(f"Phone numbers found: {phone_numbers}, URL: {offer_url}, proxy: {proxy_url}")
             save_phone_numbers(category_name, offer_url, phone_numbers)
             driver.proxy = { }
-        except mitmproxy_exceptions.TcpDisconnect as e:
-            print(f"Proxy error, retrying with a different proxy.")
+        except:
+            print(f"Error occurred while checking URL, retrying with a different proxy.")
             driver.proxy = { }
             continue
-        except:
-            print(f"Error occurred while checking URL {offer_url}")
-            break
     
 def find_phone_numbers(text):
     phone_numbers = []
