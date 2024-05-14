@@ -75,7 +75,7 @@ def create_driver_pool(max_workers):
     lock = Lock()  # Create a lock for thread-safe driver access
 
     for _ in range(max_workers):
-        driver = init_driver(headless=False, user_agent_rotation=True)
+        driver = init_driver(headless=True, user_agent_rotation=True)
         print("Created driver instance without proxy")
         with lock:
             driver_pool.append(driver)
@@ -108,8 +108,13 @@ def read_proxies_from_file(file_path):
 
     return proxy_list
 
-def get_random_proxy(proxy_list):
-    return random.choice(proxy_list)
+def get_proxy(proxy_list):
+    if not proxy_list:
+        return None
+    
+    proxy = proxy_list[0]
+    proxy_list.append(proxy_list.pop(0))
+    return proxy
 
 def fetch_url_with_retry(url, driver):
     for _ in range(max_retries):
@@ -319,9 +324,9 @@ if __name__ == "__main__":
     driver_pool, lock = create_driver_pool(max_workers)
     print("Driver pool created.")
 
-    if is_valid_url(base_category_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_random_proxy(proxy_list=proxy_list))):
+    if is_valid_url(base_category_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_proxy(proxy_list=proxy_list))):
         # Get the category name
-        category_name = get_category_name(base_category_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_random_proxy(proxy_list=proxy_list)))
+        category_name = get_category_name(base_category_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_proxy(proxy_list=proxy_list)))
         print(f"Category name: {category_name}")
 
         # Load previous progress
@@ -346,9 +351,9 @@ if __name__ == "__main__":
         category_url = base_category_url + "?order=p" + price_filter
 
         # Check if the category URL is valid
-        if is_valid_url(category_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_random_proxy(proxy_list=proxy_list))):
+        if is_valid_url(category_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_proxy(proxy_list=proxy_list))):
             # Get the page count
-            page_count = get_page_count(category_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_random_proxy(proxy_list=proxy_list)))
+            page_count = get_page_count(category_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_proxy(proxy_list=proxy_list)))
             print(f"Price range: {start_price:.2f} - {end_price:.2f}, Page count: {page_count}, URL: {category_url}")
 
             for page_num in range(start_page, page_count + 1):
@@ -367,7 +372,7 @@ if __name__ == "__main__":
                 print("Progress saved.")
 
                 # Get the offer URLs
-                offer_urls = get_offer_urls(full_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_random_proxy(proxy_list=proxy_list)))
+                offer_urls = get_offer_urls(full_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_proxy(proxy_list=proxy_list)))
                 print(f"Page {page_num}: {len(offer_urls)} offers found.")
 
                 if len(offer_urls) == 0:
@@ -377,7 +382,7 @@ if __name__ == "__main__":
 
                 # Scrape the offers
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    executor.map(lambda url: scrape_offer(url, category_name, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_random_proxy(proxy_list=proxy_list))), offer_urls)
+                    executor.map(lambda url: scrape_offer(url, category_name, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_proxy(proxy_list=proxy_list))), offer_urls)
 
                 page_end_time = time.time()  # Record the end time for the current page
                 page_elapsed_time = page_end_time - page_start_time  # Calculate the elapsed time for the current page
