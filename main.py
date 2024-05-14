@@ -146,6 +146,7 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
         print()
 
 def fetch_url_with_retry(url, driver):
+    driver.proxy = get_proxy()
     for _ in range(max_retries):
         try:
             time.sleep(timeout)
