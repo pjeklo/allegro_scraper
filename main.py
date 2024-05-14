@@ -7,6 +7,7 @@ import math
 import os
 import random
 from re import T
+import signal
 from threading import Lock
 import time
 import phonenumbers
@@ -331,9 +332,13 @@ def exit_handler():
     except:
         pass
 
+def signal_handler(signal, frame):
+    exit()
+
 if __name__ == "__main__":
     # Register the exit handler
     atexit.register(exit_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
     base_category_url = input("Enter the base category URL: ")
     base_url = f"{urlparse(base_category_url).scheme}://{urlparse(base_category_url).netloc}"
