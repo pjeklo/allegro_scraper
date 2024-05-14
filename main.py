@@ -267,11 +267,6 @@ def find_phone_numbers(text):
             phone_numbers.append(phonenumbers.format_number(phone_number, phonenumbers.PhoneNumberFormat.INTERNATIONAL))
     return phone_numbers
 
-def rawincount(filename):
-    f = open(filename, 'rb')
-    bufgen = takewhile(lambda x: x, (f.raw.read(1024*1024) for _ in repeat(None)))
-    return sum(buf.count(b'\n') for buf in bufgen)
-
 def save_phone_numbers(category, offer, phone_numbers):
     with open(csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile, delimiter=';')
@@ -293,12 +288,13 @@ def load_previous_progress(progress, category_name):
     if progress and category_name == progress.get("category_name"):
         start_price = progress.get("start_price", 0)
         start_page = progress.get("start_page", 1)
+        total_offers_scraped = progress.get("total_offers_scraped", 0)
         print(f"Previous progress found. Start price: {start_price}, Start page: {start_page}, Category name: {category_name}")
         
         load_progress = input("Do you want to load the previous progress? (y/n) ").lower()
         if load_progress == "y":
             print("Loading previous progress.")
-            return start_price, start_page, rawincount(csv_filename)
+            return start_price, start_page, total_offers_scraped
         else:
             print("Starting fresh.")
             try:
@@ -312,7 +308,7 @@ def load_previous_progress(progress, category_name):
             os.remove(csv_filename)
         except FileNotFoundError:
             pass
-        return 0, 1
+        return 0, 1, 0
 
 def exit_handler():
     try:
@@ -383,6 +379,7 @@ if __name__ == "__main__":
                 progress = {
                     "start_price": math.floor(start_price),
                     "start_page": page_num,
+                    "total_offers_scraped": total_offers_scraped,
                     "category_name": category_name
                 }
                 
