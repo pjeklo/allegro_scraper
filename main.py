@@ -158,8 +158,11 @@ def fetch_url_with_retry(url, driver):
             else:
                 print(f"No HTML source received for URL {url}. Changing proxy and retrying.")
                 driver.proxy = get_proxy()
-        except WebDriverException as e:
-            print(f"WebDriverException occurred for URL {url}. Changing proxy and retrying.")
+        except (WebDriverException, BrokenPipeError) as e:
+            if isinstance(e, BrokenPipeError):
+                print(f"BrokenPipeError occurred for URL {url}. Changing proxy and retrying.")
+            else:
+                print(f"WebDriverException occurred for URL {url}. Changing proxy and retrying.")
             driver.proxy = get_proxy()
 
     else:
