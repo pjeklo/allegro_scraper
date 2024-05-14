@@ -6,6 +6,7 @@ import json
 import math
 import os
 import random
+from re import T
 from threading import Lock
 import time
 import phonenumbers
@@ -19,14 +20,17 @@ import chromedriver_binary
 # Global variables
 price_range = 100  # Price range for filtering products
 timeout = 0  # Timeout for requests (in seconds)
-retry_timeout = 60  # Timeout for retrying failed requests (in seconds)
 max_retries = 5  # Maximum number of retries for failed requests
-max_workers = 1  # Maximum number of concurrent Chrome instances
+
 proxy_filename = 'proxy.txt'  # Filename for storing proxies
 csv_filename = 'phone_numbers.csv'  # Filename for storing phone numbers
 progress_filename = 'progress.json'  # Filename for storing progress
 
-proxy_list = []  # List of proxies
+use_headless_drivers = True  # Use headless drivers for increased performance
+use_user_agent_rotation = True  # Rotate user agents for increased performance
+
+# Initialize global variables
+proxy_list = []
 
 def init_driver(headless=True, user_agent_rotation=False, advanced_stealth=False):
     options = webdriver.ChromeOptions()
@@ -77,7 +81,7 @@ def create_driver_pool(max_workers):
     lock = Lock()  # Create a lock for thread-safe driver access
     printProgressBar(0, max_workers, prefix = 'Progress:', suffix = 'Complete', length = 50)
     for worker in range(max_workers):
-        driver = init_driver(headless=False, user_agent_rotation=True)
+        driver = init_driver(headless=use_headless_drivers, user_agent_rotation=use_user_agent_rotation)
         printProgressBar(worker + 1, max_workers, prefix = 'Progress:', suffix = 'Complete', length = 50)
         with lock:
             driver_pool.append(driver)
