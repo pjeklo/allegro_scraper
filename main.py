@@ -26,7 +26,7 @@ proxy_filename = 'proxy.txt'  # Filename for storing proxies
 csv_filename = 'phone_numbers.csv'  # Filename for storing phone numbers
 progress_filename = 'progress.json'  # Filename for storing progress
 
-use_headless_drivers = False  # Use headless drivers for increased performance
+use_headless_drivers = True  # Use headless drivers for increased performance
 use_user_agent_rotation = True  # Rotate user agents for increased performance
 
 # Initialize global variables
