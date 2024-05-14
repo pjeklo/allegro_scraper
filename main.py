@@ -1,6 +1,7 @@
 import atexit
 from concurrent.futures import ThreadPoolExecutor, wait
 import csv
+from itertools import repeat, takewhile
 import json
 import math
 import os
@@ -20,7 +21,7 @@ price_range = 100  # Price range for filtering products
 timeout = 0  # Timeout for requests (in seconds)
 retry_timeout = 60  # Timeout for retrying failed requests (in seconds)
 max_retries = 5  # Maximum number of retries for failed requests
-max_workers = os.cpu_count()  # Maximum number of concurrent Chrome instances
+max_workers = 1  # Maximum number of concurrent Chrome instances
 proxy_filename = 'proxy.txt'  # Filename for storing proxies
 csv_filename = 'phone_numbers.csv'  # Filename for storing phone numbers
 progress_filename = 'progress.json'  # Filename for storing progress
@@ -74,17 +75,27 @@ def create_driver_pool(max_workers):
     lock = Lock()  # Create a lock for thread-safe driver access
 
     for _ in range(max_workers):
-        driver = init_driver(headless=True, user_agent_rotation=True)
+        driver = init_driver(headless=False, user_agent_rotation=True)
         print("Created driver instance without proxy")
         with lock:
             driver_pool.append(driver)
 
     return driver_pool, lock
 
-def rotate_driver(driver_pool, lock):
+def rotate_driver(driver_pool, lock, proxy):
     with lock:
         driver = driver_pool.pop(0)
         driver_pool.append(driver)
+        proxy_parts = proxy.split(':')
+        proxy_host = proxy_parts[0]
+        proxy_port = proxy_parts[1]
+        proxy_user = proxy_parts[2]
+        proxy_pass = proxy_parts[3]
+        proxy_url = f"http://{proxy_user}:{proxy_pass}@{proxy_host}:{proxy_port}"
+        driver.proxy = {
+            "http": proxy_url,
+            "https": proxy_url
+        }
     return driver
     
 def read_proxies_from_file(file_path):
@@ -96,6 +107,9 @@ def read_proxies_from_file(file_path):
                 proxy_list.append(proxy)
 
     return proxy_list
+
+def get_random_proxy(proxy_list):
+    return random.choice(proxy_list)
 
 def fetch_url_with_retry(url, driver):
     for _ in range(max_retries):
@@ -211,27 +225,14 @@ def extract_phone_numbers(url, driver):
 
     return unique_phone_numbers
 
-def scrape_offer(offer_url, category_name, driver, proxy_list):
+def scrape_offer(offer_url, category_name, driver):
     for _ in range(max_retries):
         try:
-            proxy_url = "none"
-
-            if driver.proxy == { }:
-                proxy = random.choice(proxy_list)
-                proxy_parts = proxy.split(':')
-                proxy_host = proxy_parts[0]
-                proxy_port = proxy_parts[1]
-                proxy_user = proxy_parts[2]
-                proxy_pass = proxy_parts[3]
-                proxy_url = f"http://{proxy_user}:{proxy_pass}@{proxy_host}:{proxy_port}"
-                driver.proxy = {
-                    "http": proxy_url,
-                    "https": proxy_url
-                }
             phone_numbers = extract_phone_numbers(offer_url, driver)
-            print(f"Phone numbers found: {phone_numbers}, URL: {offer_url}, proxy: {proxy_url}")
+            print(f"Phone numbers found: {phone_numbers}, URL: {offer_url}, proxy: {driver.proxy['http']}")
             save_phone_numbers(category_name, offer_url, phone_numbers)
             driver.proxy = { }
+            break
         except:
             print(f"Error occurred while checking URL, retrying with a different proxy.")
             driver.proxy = { }
@@ -244,6 +245,11 @@ def find_phone_numbers(text):
         if phonenumbers.is_valid_number(phone_number):
             phone_numbers.append(phonenumbers.format_number(phone_number, phonenumbers.PhoneNumberFormat.INTERNATIONAL))
     return phone_numbers
+
+def rawincount(filename):
+    f = open(filename, 'rb')
+    bufgen = takewhile(lambda x: x, (f.raw.read(1024*1024) for _ in repeat(None)))
+    return sum(buf.count(b'\n') for buf in bufgen)
 
 def save_phone_numbers(category, offer, phone_numbers):
     with open(csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
@@ -271,14 +277,14 @@ def load_previous_progress(progress, category_name):
         load_progress = input("Do you want to load the previous progress? (y/n) ").lower()
         if load_progress == "y":
             print("Loading previous progress.")
-            return start_price, start_page
+            return start_price, start_page, rawincount(csv_filename)
         else:
             print("Starting fresh.")
             try:
                 os.remove(csv_filename)
             except FileNotFoundError:
                 pass
-            return 0, 1
+            return 0, 1, 0
     else:
         print("No previous progress found or category name does not match.")
         try:
@@ -301,6 +307,11 @@ if __name__ == "__main__":
     base_category_url = input("Enter the base category URL: ")
     base_url = f"{urlparse(base_category_url).scheme}://{urlparse(base_category_url).netloc}"
 
+    try:
+        max_workers = int(input("Enter the maximum number of workers (or default): "))
+    except:
+        max_workers = os.cpu_count()
+
     proxy_list = read_proxies_from_file(proxy_filename)
     print(f"Proxies loaded: {len(proxy_list)}")
 
@@ -308,22 +319,20 @@ if __name__ == "__main__":
     driver_pool, lock = create_driver_pool(max_workers)
     print("Driver pool created.")
 
-    # Check if the base URL is valid
-    if is_valid_url(base_category_url, rotate_driver(driver_pool=driver_pool, lock=lock)):
+    if is_valid_url(base_category_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_random_proxy(proxy_list=proxy_list))):
         # Get the category name
-        category_name = get_category_name(base_category_url, rotate_driver(driver_pool=driver_pool, lock=lock))
+        category_name = get_category_name(base_category_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_random_proxy(proxy_list=proxy_list)))
         print(f"Category name: {category_name}")
 
         # Load previous progress
         progress = load_progress()
-        start_from_price, start_page = load_previous_progress(progress, category_name)
+        start_from_price, start_page, total_offers_scraped = load_previous_progress(progress, category_name)
         
     else:
         print(f"Base URL is invalid: {base_category_url}")
         exit()
 
     start_time = time.time()  # Record the start time
-    total_offers_scraped = 0
 
     for start_price in range(start_from_price, 1000000000, price_range):
         # Calculate the end price
@@ -337,9 +346,9 @@ if __name__ == "__main__":
         category_url = base_category_url + "?order=p" + price_filter
 
         # Check if the category URL is valid
-        if is_valid_url(category_url, rotate_driver(driver_pool=driver_pool, lock=lock)):
+        if is_valid_url(category_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_random_proxy(proxy_list=proxy_list))):
             # Get the page count
-            page_count = get_page_count(category_url, rotate_driver(driver_pool=driver_pool, lock=lock))
+            page_count = get_page_count(category_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_random_proxy(proxy_list=proxy_list)))
             print(f"Price range: {start_price:.2f} - {end_price:.2f}, Page count: {page_count}, URL: {category_url}")
 
             for page_num in range(start_page, page_count + 1):
@@ -358,18 +367,17 @@ if __name__ == "__main__":
                 print("Progress saved.")
 
                 # Get the offer URLs
-                offer_urls = get_offer_urls(full_url, rotate_driver(driver_pool=driver_pool, lock=lock))
+                offer_urls = get_offer_urls(full_url, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_random_proxy(proxy_list=proxy_list)))
                 print(f"Page {page_num}: {len(offer_urls)} offers found.")
+
+                if len(offer_urls) == 0:
+                    continue
+
+                total_offers_scraped += len(offer_urls)
 
                 # Scrape the offers
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    all_futures = []
-                    for offer_url in offer_urls:
-                        future = executor.submit(scrape_offer, offer_url, category_name, rotate_driver(driver_pool=driver_pool, lock=lock), proxy_list)
-                        all_futures.append(future)
-
-                    # Wait for all futures to complete
-                    results = wait(all_futures)
+                    executor.map(lambda url: scrape_offer(url, category_name, rotate_driver(driver_pool=driver_pool, lock=lock, proxy=get_random_proxy(proxy_list=proxy_list))), offer_urls)
 
                 page_end_time = time.time()  # Record the end time for the current page
                 page_elapsed_time = page_end_time - page_start_time  # Calculate the elapsed time for the current page
