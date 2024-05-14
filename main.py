@@ -324,9 +324,10 @@ def load_previous_progress(progress, category_name):
 def exit_handler():
     try:
         print("Closing open drivers...")
-        for driver in driver_pool:
+        printProgressBar(0, max_workers, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        for i, driver in enumerate(driver_pool):
+            printProgressBar(i + 1, max_workers, prefix = 'Progress:', suffix = 'Complete', length = 50)
             driver.quit()
-        print("All drivers closed.")
     except:
         pass
 
@@ -378,7 +379,7 @@ if __name__ == "__main__":
         if is_valid_url(category_url, rotate_driver(driver_pool=driver_pool, lock=lock)):
             # Get the page count
             page_count = get_page_count(category_url, rotate_driver(driver_pool=driver_pool, lock=lock))
-            print(f"Price range: {start_price:.2f} - {end_price:.2f}, Page count: {page_count}, URL: {category_url}")
+            print(f"Price range: {start_price:.2f} - {end_price:.2f}, Page count: {page_count}, URL: {category_url}\n")
 
             for page_num in range(start_page, page_count + 1):
                 page_filter = f"&p={page_num}"
@@ -395,11 +396,11 @@ if __name__ == "__main__":
                 }
                 
                 save_progress(progress)
-                print("\nProgress saved.\n")
+                print("Progress saved.\n")
 
                 # Get the offer URLs
                 offer_urls = get_offer_urls(full_url, rotate_driver(driver_pool=driver_pool, lock=lock))
-                print(f"\nPage {page_num}: {len(offer_urls)} offers found.\n")
+                print(f"Page {page_num}: {len(offer_urls)} offers found.\n")
 
                 if len(offer_urls) == 0:
                     continue
