@@ -26,7 +26,7 @@ proxy_filename = 'proxy.txt'  # Filename for storing proxies
 csv_filename = 'phone_numbers.csv'  # Filename for storing phone numbers
 progress_filename = 'progress.json'  # Filename for storing progress
 
-use_headless_drivers = True  # Use headless drivers for increased performance
+use_headless_drivers = False  # Use headless drivers for increased performance
 use_user_agent_rotation = True  # Rotate user agents for increased performance
 
 # Initialize global variables
@@ -40,6 +40,9 @@ def init_driver(headless=True, user_agent_rotation=False, advanced_stealth=False
 
     # Disable images
     options.add_argument("--blink-settings=imagesEnabled=false")
+
+    # Disable JavaScript
+    options.add_argument("--disable-javascript")
 
     # Disable GPU
     options.add_argument("--disable-gpu")
@@ -392,11 +395,11 @@ if __name__ == "__main__":
                 }
                 
                 save_progress(progress)
-                print("Progress saved.")
+                print("\nProgress saved.\n")
 
                 # Get the offer URLs
                 offer_urls = get_offer_urls(full_url, rotate_driver(driver_pool=driver_pool, lock=lock))
-                print(f"Page {page_num}: {len(offer_urls)} offers found.")
+                print(f"\nPage {page_num}: {len(offer_urls)} offers found.\n")
 
                 if len(offer_urls) == 0:
                     continue
@@ -407,23 +410,19 @@ if __name__ == "__main__":
 
                 total_offers_scraped += len(offer_urls)
 
-                page_end_time = time.time()  # Record the end time for the current page
-                page_elapsed_time = page_end_time - page_start_time  # Calculate the elapsed time for the current page
+                # Calculate the elapsed time and offers per minute rate
+                end_time = time.time()
+                elapsed_time = end_time - start_time
+                page_elapsed_time = end_time - page_start_time
+                offers_per_minute = total_offers_scraped / (elapsed_time / 60)
 
-                # Calculate the offers per minute rate for the current page
-                page_offers_per_minute = len(offer_urls) / (page_elapsed_time / 60)
-                print(f"Total offers scraped: {total_offers_scraped}, Offers per minute: {page_offers_per_minute:.2f}")
+                # Print the results for the current page
+                print(f"\nPage {page_num} scraped in {page_elapsed_time:.2f} seconds")
+                print(f"Total offers scraped: {total_offers_scraped}")
+                print(f"Elapsed time: {elapsed_time:.2f} seconds")
+                print(f"Offers per minute: {offers_per_minute:.2f}\n")
 
             start_page = 1
-
-            end_time = time.time()  # Record the end time
-            elapsed_time = end_time - start_time  # Calculate the elapsed time in seconds
-
-            # Calculate the offers per minute rate
-            offers_per_minute = total_offers_scraped / (elapsed_time / 60)
-            print(f"Total offers scraped: {total_offers_scraped}")
-            print(f"Elapsed time: {elapsed_time:.2f} seconds")
-            print(f"Offers per minute: {offers_per_minute:.2f}")
         else:
             print(f"Invalid URL: {category_url}")
 
