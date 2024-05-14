@@ -104,14 +104,6 @@ def read_proxies_from_file(file_path):
 
     return proxy_list
 
-def get_proxy():
-    if not proxy_list:
-        return None
-    
-    proxy = proxy_list[0]
-    proxy_list.append(proxy_list.pop(0))
-    return proxy
-
 def proxy_to_proxy_object(proxy):
     proxy_parts = proxy.split(':')
     proxy_host = proxy_parts[0]
@@ -123,6 +115,14 @@ def proxy_to_proxy_object(proxy):
         "http": proxy_url,
         "https": proxy_url
     }
+
+def get_proxy():
+    if not proxy_list:
+        return None
+    
+    proxy = proxy_list[0]
+    proxy_list.append(proxy_list.pop(0))
+    return proxy_to_proxy_object(proxy)
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
     """
