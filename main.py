@@ -300,7 +300,7 @@ def load_previous_progress(progress, category_name):
         start_price = progress.get("start_price", 0)
         start_page = progress.get("start_page", 1)
         total_offers_scraped = progress.get("total_offers_scraped", 0)
-        print(f"Previous progress found. Start price: {start_price}, Start page: {start_page}, Category name: {category_name}")
+        print(f"Previous progress found with {total_offers_scraped} offers scraped.")
         
         load_progress = input("Do you want to load the previous progress? (y/n) ").lower()
         if load_progress == "y":
