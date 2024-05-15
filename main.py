@@ -20,7 +20,8 @@ import chromedriver_binary
 
 # Global variables
 price_range = 100  # Price range for filtering products
-timeout = 0  # Timeout for requests (in seconds)
+proxy_request_timeout = 0  # Timeout for requests (in seconds)
+no_proxy_request_timeout = 0  # Timeout for requests (in seconds)
 max_retries = 5  # Maximum number of retries for failed requests
 
 proxy_filename = 'proxy.txt'  # Filename for storing proxies
@@ -149,43 +150,48 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     if iteration == total: 
         print()
 
-def fetch_url_with_retry(url, driver):
-    driver.proxy = get_proxy()
+def fetch_url_with_retry(url, driver, proxy=True):
     for _ in range(max_retries):
         try:
-            time.sleep(timeout)
+            if proxy:
+                driver.proxy = get_proxy()
+                time.sleep(proxy_request_timeout)
+            else:
+                time.sleep(no_proxy_request_timeout)
             driver.get(url)
             html_source = driver.page_source
             if html_source:
                 driver.proxy = { }
                 return html_source
             else:
-                print(f"No HTML source received for URL {url}. Changing proxy and retrying.")
-                driver.proxy = get_proxy()
-        except (WebDriverException, BrokenPipeError) as e:
-            if isinstance(e, BrokenPipeError):
-                print(f"BrokenPipeError occurred for URL {url}. Changing proxy and retrying.")
-            else:
-                print(f"WebDriverException occurred for URL {url}. Changing proxy and retrying.")
-            driver.proxy = get_proxy()
+                raise Exception(f"No HTML source received for URL {url}.")
+        except:
+            print(f"Changing proxy and retrying.")
 
     else:
         print(f"Failed to fetch URL {url} after {max_retries} retries.")
-        driver.proxy = { }
+        if proxy:
+            driver.proxy = { }
         return None
 
 
 def is_valid_url(url, driver):
-    html_source = fetch_url_with_retry(url, driver)
+    html_source = fetch_url_with_retry(url, driver, False)
     if html_source:
         return True
     else:
-        return False
+        html_source = fetch_url_with_retry(url, driver)
+        if html_source:
+            return True
+        else:
+            return False
     
 def get_category_name(url, driver):
-    html_source = fetch_url_with_retry(url, driver)
+    html_source = fetch_url_with_retry(url, driver, False)
     if not html_source:
-        return []
+        html_source = fetch_url_with_retry(url, driver)
+        if not html_source:
+            return []
 
     soup = BeautifulSoup(html_source, 'html.parser')
 
@@ -203,9 +209,11 @@ def get_category_name(url, driver):
     return ""
 
 def get_page_count(url, driver):
-    html_source = fetch_url_with_retry(url, driver)
+    html_source = fetch_url_with_retry(url, driver, False)
     if not html_source:
-        return []
+        html_source = fetch_url_with_retry(url, driver)
+        if not html_source:
+            return []
     
     soup = BeautifulSoup(html_source, 'html.parser')
 
@@ -219,9 +227,11 @@ def get_page_count(url, driver):
     return 1
 
 def get_offer_urls(url, driver):
-    html_source = fetch_url_with_retry(url, driver)
+    html_source = fetch_url_with_retry(url, driver, False)
     if not html_source:
-        return []
+        html_source = fetch_url_with_retry(url, driver)
+        if not html_source:
+            return []
     
     soup = BeautifulSoup(html_source, 'html.parser')
 
