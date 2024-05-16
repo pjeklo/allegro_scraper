@@ -1,11 +1,9 @@
 import atexit
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor
 import csv
-from itertools import repeat, takewhile
 import json
 import math
 import os
-import random
 from re import T
 import signal
 from threading import Lock
@@ -13,15 +11,14 @@ import time
 import phonenumbers
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
-from selenium.common.exceptions import WebDriverException
 from fake_useragent import UserAgent
 from seleniumwire import webdriver
 import chromedriver_binary
 
 # Global variables
 price_range = 100  # Price range for filtering products
-proxy_request_timeout = 0  # Timeout for requests (in seconds)
-no_proxy_request_timeout = 0  # Timeout for requests (in seconds)
+request_timeout = 0  # Timeout for requests (in seconds)
+no_proxy_request_timeout = 20  # Timeout for requests (in seconds)
 max_retries = 5  # Maximum number of retries for failed requests
 
 proxy_filename = 'proxy.txt'  # Filename for storing proxies
@@ -33,6 +30,7 @@ use_user_agent_rotation = True  # Rotate user agents for increased performance
 
 # Initialize global variables
 proxy_list = []
+last_non_proxy_attempt = time.time() - 60
 
 def init_driver(headless=True, user_agent_rotation=False, advanced_stealth=False):
     options = webdriver.ChromeOptions()
@@ -155,43 +153,52 @@ def fetch_url_with_retry(url, driver, proxy=True):
         try:
             if proxy:
                 driver.proxy = get_proxy()
-                time.sleep(proxy_request_timeout)
             else:
-                time.sleep(no_proxy_request_timeout)
+                driver.proxy = { }
+
+            time.sleep(request_timeout)
             driver.get(url)
+            
+            if driver.last_request.response:
+                # Check for 404 status code before returning
+                if driver.last_request.response.status_code == 404:
+                    return None  # Return None for 404
+            
+                # Check for 429 status code before returning
+                if driver.last_request.response.status_code == 429:
+                    raise Exception(f"Received 429 status code")
+            
             html_source = driver.page_source
+            
             if html_source:
                 driver.proxy = { }
                 return html_source
             else:
-                raise Exception(f"No HTML source received for URL {url}.")
-        except:
-            print(f"Changing proxy and retrying.")
+                raise Exception(f"Received empty HTML source")
+        except Exception as e:
+            proxy = True
+            print(f"Error: {e}")
 
     else:
         print(f"Failed to fetch URL {url} after {max_retries} retries.")
         if proxy:
             driver.proxy = { }
         return None
-
-
-def is_valid_url(url, driver):
-    html_source = fetch_url_with_retry(url, driver, False)
-    if html_source:
-        return True
-    else:
-        html_source = fetch_url_with_retry(url, driver)
-        if html_source:
-            return True
-        else:
-            return False
     
-def get_category_name(url, driver):
-    html_source = fetch_url_with_retry(url, driver, False)
+def fetch_url_with_retry_and_proxy_fallback(url, driver):
+    global last_non_proxy_attempt
+    if time.time() - last_non_proxy_attempt > no_proxy_request_timeout:
+        html_source = fetch_url_with_retry(url, driver, False)
+        last_non_proxy_attempt = time.time()
+        if html_source:
+            return html_source
+        
+    html_source = fetch_url_with_retry(url, driver, True)
+    return html_source
+    
+def get_category_name(html_source):
     if not html_source:
-        html_source = fetch_url_with_retry(url, driver)
-        if not html_source:
-            return []
+        return []
 
     soup = BeautifulSoup(html_source, 'html.parser')
 
@@ -208,12 +215,9 @@ def get_category_name(url, driver):
         return " ".join(category_names)
     return ""
 
-def get_page_count(url, driver):
-    html_source = fetch_url_with_retry(url, driver, False)
+def get_page_count(html_source):
     if not html_source:
-        html_source = fetch_url_with_retry(url, driver)
-        if not html_source:
-            return []
+        return 0
     
     soup = BeautifulSoup(html_source, 'html.parser')
 
@@ -224,14 +228,11 @@ def get_page_count(url, driver):
         page_count_text = last_link.text
         page_count = int(page_count_text)
         return page_count
-    return 1
+    return 0
 
-def get_offer_urls(url, driver):
-    html_source = fetch_url_with_retry(url, driver, False)
+def get_offer_urls(html_source):
     if not html_source:
-        html_source = fetch_url_with_retry(url, driver)
-        if not html_source:
-            return []
+        return []
     
     soup = BeautifulSoup(html_source, 'html.parser')
 
@@ -242,6 +243,8 @@ def get_offer_urls(url, driver):
 
     # Find all article elements within the right_items_div
     articles = right_items_div.find_all('article', recursive=True)
+    if not articles:
+        return []
 
     offer_urls = []
 
@@ -364,9 +367,11 @@ if __name__ == "__main__":
     print(f"Creating driver pool with {max_workers} workers...")
     driver_pool, lock = create_driver_pool(max_workers)
 
-    if is_valid_url(base_category_url, rotate_driver(driver_pool=driver_pool, lock=lock)):
+    base_category_html_source = fetch_url_with_retry_and_proxy_fallback(base_category_url, rotate_driver(driver_pool=driver_pool, lock=lock))
+
+    if base_category_html_source:
         # Get the category name
-        category_name = get_category_name(base_category_url, rotate_driver(driver_pool=driver_pool, lock=lock))
+        category_name = get_category_name(base_category_html_source)
         print(f"Category name: {category_name}")
 
         # Load previous progress
@@ -377,6 +382,7 @@ if __name__ == "__main__":
         print(f"Base URL is invalid: {base_category_url}")
         exit()
 
+    offers_scraped = 0
     start_time = time.time()  # Record the start time
 
     for start_price in range(start_from_price, 1000000000, price_range):
@@ -390,57 +396,62 @@ if __name__ == "__main__":
         price_filter = f"&price_from={start_price:.2f}&price_to={end_price:.2f}"
         category_url = base_category_url + "?order=p" + price_filter
 
-        # Check if the category URL is valid
-        if is_valid_url(category_url, rotate_driver(driver_pool=driver_pool, lock=lock)):
-            # Get the page count
-            page_count = get_page_count(category_url, rotate_driver(driver_pool=driver_pool, lock=lock))
-            print(f"Price range: {start_price:.2f} - {end_price:.2f}, Page count: {page_count}, URL: {category_url}\n")
+        category_html_source = fetch_url_with_retry_and_proxy_fallback(category_url, rotate_driver(driver_pool=driver_pool, lock=lock))
 
-            for page_num in range(start_page, page_count + 1):
-                page_filter = f"&p={page_num}"
-                full_url = category_url + page_filter
+        # Get the page count
+        page_count = get_page_count(category_html_source)
+        print(f"Price range: {start_price:.2f} - {end_price:.2f}, Page count: {page_count}, URL: {category_url}\n")
 
-                page_start_time = time.time()  # Record the start time for the current page
+        if page_count == 0:
+            continue
 
-                # Save progress
-                progress = {
-                    "start_price": math.floor(start_price),
-                    "start_page": page_num,
-                    "total_offers_scraped": total_offers_scraped,
-                    "category_name": category_name
-                }
-                
-                save_progress(progress)
-                print("Progress saved.\n")
+        for page_num in range(start_page, page_count + 1):
+            if page_num == 1:
+                page_html_source = category_html_source
+            else:
+                page_url = f"{category_url}&p={page_num}"
+                page_html_source = fetch_url_with_retry_and_proxy_fallback(page_url, rotate_driver(driver_pool=driver_pool, lock=lock))
 
-                # Get the offer URLs
-                offer_urls = get_offer_urls(full_url, rotate_driver(driver_pool=driver_pool, lock=lock))
-                print(f"Page {page_num}: {len(offer_urls)} offers found.\n")
+            page_start_time = time.time()  # Record the start time for the current page
 
-                if len(offer_urls) == 0:
-                    continue
+            # Save progress
+            progress = {
+                "start_price": math.floor(start_price),
+                "start_page": page_num,
+                "total_offers_scraped": total_offers_scraped,
+                "category_name": category_name
+            }
+            
+            save_progress(progress)
+            print("Progress saved.\n")
 
-                # Scrape the offers
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    executor.map(lambda url: scrape_offer(url, category_name, rotate_driver(driver_pool=driver_pool, lock=lock)), offer_urls)
+            # Get the offer URLs
+            offer_urls = get_offer_urls(page_html_source)
+            print(f"Page {page_num}: {len(offer_urls)} offers found.\n")
 
-                total_offers_scraped += len(offer_urls)
+            if len(offer_urls) == 0:
+                continue
 
-                # Calculate the elapsed time and offers per minute rate
-                end_time = time.time()
-                elapsed_time = end_time - start_time
-                page_elapsed_time = end_time - page_start_time
-                offers_per_minute = total_offers_scraped / (elapsed_time / 60)
+            # Scrape the offers
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                executor.map(lambda url: scrape_offer(url, category_name, rotate_driver(driver_pool=driver_pool, lock=lock)), offer_urls)
+            
+            offers_scraped += len(offer_urls)
+            total_offers_scraped += len(offer_urls)
 
-                # Print the results for the current page
-                print(f"\nPage {page_num} scraped in {page_elapsed_time:.2f} seconds")
-                print(f"Total offers scraped: {total_offers_scraped}")
-                print(f"Elapsed time: {elapsed_time:.2f} seconds")
-                print(f"Offers per minute: {offers_per_minute:.2f}\n")
+            # Calculate the elapsed time and offers per minute rate
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            page_elapsed_time = end_time - page_start_time
+            offers_per_minute = offers_scraped / (elapsed_time / 60)
+
+            # Print the results for the current page
+            print(f"\nPage {page_num} scraped in {page_elapsed_time:.2f} seconds")
+            print(f"Total offers scraped: {total_offers_scraped}")
+            print(f"Elapsed time: {elapsed_time:.2f} seconds")
+            print(f"Offers per minute: {offers_per_minute:.2f}\n")
 
             start_page = 1
-        else:
-            print(f"Invalid URL: {category_url}")
 
     end_time = time.time()  # Record the end time
     elapsed_time = end_time - start_time  # Calculate the elapsed time in seconds
